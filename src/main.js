@@ -9,6 +9,7 @@ let pollinatorTrees = [];
 let irrigationGroup, dimensionsGroup, pollenParticles, boundaryGroup;
 let selectedTreeMesh = null;
 let highlightRing = null;
+const clock = new THREE.Clock();
 
 let isIrrigationOn = true;
 let isPollinatorsHighlighted = false;
@@ -615,8 +616,6 @@ function onWindowResize() {
 }
 
 // Animation Loop
-let clock = new THREE.Clock();
-
 function animate() {
   requestAnimationFrame(animate);
 
