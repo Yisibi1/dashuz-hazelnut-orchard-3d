@@ -37,7 +37,7 @@ const CAM_PRESETS = {
   orbit: { pos: new THREE.Vector3(55, 42, 60), target: new THREE.Vector3(0, 0, 0) },
   top: { pos: new THREE.Vector3(0, 240, 0.1), target: new THREE.Vector3(0, 0, 0) },
   walk: { pos: new THREE.Vector3(0, 1.8, -135), target: new THREE.Vector3(0, 1.8, 80) },
-  river: { pos: new THREE.Vector3(-140, 50, -40), target: new THREE.Vector3(-60, 5, -20) }
+  river: { pos: new THREE.Vector3(-100, 140, -60), target: new THREE.Vector3(-95, 0, -20) }
 };
 
 // Lighting / Atmosphere Themes
