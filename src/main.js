@@ -37,7 +37,7 @@ const CAM_PRESETS = {
   orbit: { pos: new THREE.Vector3(55, 42, 60), target: new THREE.Vector3(0, 0, 0) },
   top: { pos: new THREE.Vector3(0, 240, 0.1), target: new THREE.Vector3(0, 0, 0) },
   walk: { pos: new THREE.Vector3(0, 1.8, -135), target: new THREE.Vector3(0, 1.8, 80) },
-  river: { pos: new THREE.Vector3(-100, 140, -60), target: new THREE.Vector3(-95, 0, -20) }
+  river: { pos: new THREE.Vector3(25, 70, -130), target: new THREE.Vector3(-40, 0, -190) }
 };
 
 // Lighting / Atmosphere Themes
@@ -616,58 +616,74 @@ function createIrrigationSystem() {
 function createAyrichayRiver() {
   riverGroup = new THREE.Group();
 
-  // 1. Winding River Surface (Ayrichay)
+  // 1. Winding River Course directly at the HEAD of the field (Z < -160)
+  // Perfectly matching the user's satellite drawing:
+  // River enters from the west, loops directly in front of the field's short head, then turns south!
   const riverCurve = new THREE.CatmullRomCurve3([
-    new THREE.Vector3(-195, -0.2, -200),
-    new THREE.Vector3(-180, -0.2, -120),
-    new THREE.Vector3(-168, -0.2, -20),
-    new THREE.Vector3(-182, -0.2, 70),
-    new THREE.Vector3(-198, -0.2, 190)
+    new THREE.Vector3(-140, -0.2, -165),
+    new THREE.Vector3(-95, -0.2, -180),
+    new THREE.Vector3(-55, -0.2, -195), // Apex loop directly off field head!
+    new THREE.Vector3(-45, -0.2, -225),
+    new THREE.Vector3(-30, -0.2, -280)
   ]);
 
   // River water ribbon
-  const riverTubeGeom = new THREE.TubeGeometry(riverCurve, 64, 12, 8, false);
+  const riverTubeGeom = new THREE.TubeGeometry(riverCurve, 64, 14, 8, false);
   const riverWaterMat = new THREE.MeshStandardMaterial({
     color: 0x0284c7,
-    roughness: 0.1,
+    roughness: 0.12,
     metalness: 0.75,
     transparent: true,
-    opacity: 0.92
+    opacity: 0.94
   });
   const riverMesh = new THREE.Mesh(riverTubeGeom, riverWaterMat);
   riverMesh.scale.set(1, 0.08, 1);
-  riverMesh.position.y = -0.2;
+  riverMesh.position.y = -0.22;
   riverGroup.add(riverMesh);
 
   // Riverbed gravel bank
-  const riverBedMat = new THREE.MeshStandardMaterial({ color: 0x3d3930, roughness: 0.95 });
-  const riverBedMesh = new THREE.Mesh(new THREE.TubeGeometry(riverCurve, 64, 16, 6, false), riverBedMat);
+  const riverBedMat = new THREE.MeshStandardMaterial({ color: 0x473f33, roughness: 0.95 });
+  const riverBedMesh = new THREE.Mesh(new THREE.TubeGeometry(riverCurve, 64, 18, 6, false), riverBedMat);
   riverBedMesh.scale.set(1, 0.05, 1);
-  riverBedMesh.position.y = -0.32;
+  riverBedMesh.position.y = -0.34;
   riverGroup.add(riverBedMesh);
 
-  // Riparian Trees & Shrubs along Ayrichay banks
-  const bushGeom = new THREE.DodecahedronGeometry(2.4, 1);
-  const bushMat = new THREE.MeshStandardMaterial({ color: 0x1e5e3a, roughness: 0.8, flatShading: true });
-  const bushMat2 = new THREE.MeshStandardMaterial({ color: 0x2d7a4c, roughness: 0.75, flatShading: true });
+  // Riparian Trees & Shrubs along the river bend
+  const bushGeom = new THREE.DodecahedronGeometry(2.6, 1);
+  const bushMat = new THREE.MeshStandardMaterial({ color: 0x1b4d32, roughness: 0.8, flatShading: true });
+  const bushMat2 = new THREE.MeshStandardMaterial({ color: 0x276743, roughness: 0.75, flatShading: true });
 
   const points = riverCurve.getPoints(24);
   points.forEach((pt, idx) => {
-    // West bank bush
+    // Outer bank bush
     const b1 = new THREE.Mesh(bushGeom, idx % 2 === 0 ? bushMat : bushMat2);
-    b1.position.set(pt.x - 15 - Math.random() * 8, 1.2, pt.z + (Math.random() - 0.5) * 6);
-    b1.scale.setScalar(0.8 + Math.random() * 0.6);
+    b1.position.set(pt.x - 14 - Math.random() * 6, 1.2, pt.z - 8 + (Math.random() - 0.5) * 6);
+    b1.scale.setScalar(0.85 + Math.random() * 0.5);
     riverGroup.add(b1);
 
-    // East bank bush (towards plot)
+    // Inner bank bush (towards plot head)
     const b2 = new THREE.Mesh(bushGeom, idx % 2 === 1 ? bushMat : bushMat2);
-    b2.position.set(pt.x + 14 + Math.random() * 6, 1.2, pt.z + (Math.random() - 0.5) * 6);
+    b2.position.set(pt.x + 12 + Math.random() * 5, 1.2, pt.z + 8 + (Math.random() - 0.5) * 6);
     b2.scale.setScalar(0.8 + Math.random() * 0.5);
     riverGroup.add(b2);
   });
 
-  // 2. Riverside Intake Pumping Station (Çay Nasos Qovşağı)
-  const intakePos = new THREE.Vector3(-166, 0.1, -18);
+  // 2. Dirt Farm Road curling around the field head
+  const roadCurve = new THREE.CatmullRomCurve3([
+    new THREE.Vector3(-PLOT_WIDTH / 2 - 2, 0.05, -(PLOT_LENGTH / 2) + 20),
+    new THREE.Vector3(-PLOT_WIDTH / 2 - 2, 0.05, -(PLOT_LENGTH / 2) - 5),
+    new THREE.Vector3(-PLOT_WIDTH / 2 + 10, 0.05, -(PLOT_LENGTH / 2) - 15),
+    new THREE.Vector3(PLOT_WIDTH / 2 + 6, 0.05, -(PLOT_LENGTH / 2) - 18)
+  ]);
+  const roadTube = new THREE.TubeGeometry(roadCurve, 32, 2.2, 4, false);
+  const roadMat = new THREE.MeshStandardMaterial({ color: 0x544738, roughness: 0.95 });
+  const roadMesh = new THREE.Mesh(roadTube, roadMat);
+  roadMesh.scale.set(1, 0.02, 1);
+  roadMesh.position.y = 0.02;
+  riverGroup.add(roadMesh);
+
+  // 3. Riverside Intake Pumping Station at the river loop apex
+  const intakePos = new THREE.Vector3(-55, 0.1, -195);
   const intakeStation = new THREE.Group();
   intakeStation.position.copy(intakePos);
 
@@ -684,16 +700,16 @@ function createAyrichayRiver() {
   pump.castShadow = true;
   intakeStation.add(pump);
 
-  // Suction pipe dipping into Ayrichay
-  const suctionGeom = new THREE.CylinderGeometry(0.12, 0.12, 14, 8);
+  // Suction pipe into river
+  const suctionGeom = new THREE.CylinderGeometry(0.12, 0.12, 8, 8);
   const suctionPipe = new THREE.Mesh(suctionGeom, new THREE.MeshStandardMaterial({ color: 0x1e293b, roughness: 0.5 }));
-  suctionPipe.position.set(-6.5, -0.1, 0);
+  suctionPipe.position.set(-3.5, -0.1, 0);
   suctionPipe.rotation.z = Math.PI / 2.3;
   intakeStation.add(suctionPipe);
 
   riverGroup.add(intakeStation);
 
-  // 3. 180-meter Main Connecting Pipe from Ayrichay to Orchard Filter Station
+  // 4. Short Connecting Pipe from Ayrichay Apex to Orchard Filtration Station
   const filterStationPos = new THREE.Vector3(-PLOT_WIDTH / 2 + 2, 0.1, -(PLOT_LENGTH / 2) + 7);
   const pipeLength = intakePos.distanceTo(filterStationPos);
 
@@ -704,18 +720,22 @@ function createAyrichayRiver() {
   const midPoint = new THREE.Vector3().addVectors(intakePos, filterStationPos).multiplyScalar(0.5);
   mainSupplyPipe.position.copy(midPoint);
   mainSupplyPipe.position.y = 0.08;
-  mainSupplyPipe.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), filterStationPos.clone().sub(intakePos).normalize());
+  mainSupplyPipe.quaternion.setFromUnitVectors(
+    new THREE.Vector3(0, 1, 0),
+    filterStationPos.clone().sub(intakePos).normalize()
+  );
   riverGroup.add(mainSupplyPipe);
 
-  // 4. Water Flow Pulse Spheres along the supply pipe
+  // 5. Water Flow Pulse Spheres along the supply pipe
+  waterPulses = [];
   const pulseGeom = new THREE.SphereGeometry(0.25, 8, 8);
   const pulseMat = new THREE.MeshBasicMaterial({ color: 0x38bdf8 });
-  for (let i = 0; i < 8; i++) {
+  for (let i = 0; i < 6; i++) {
     const pulse = new THREE.Mesh(pulseGeom, pulseMat);
     pulse.userData = {
       start: intakePos.clone(),
       end: filterStationPos.clone(),
-      progress: i / 8
+      progress: i / 6
     };
     pulse.position.lerpVectors(intakePos, filterStationPos, pulse.userData.progress);
     pulse.position.y = 0.25;
