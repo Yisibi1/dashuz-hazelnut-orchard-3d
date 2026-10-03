@@ -1,0 +1,196 @@
+<!DOCTYPE html>
+<html lang="az">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Şəki Daşüz – 84 Sot Müasir Fındıq Bağı 3D Planı</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/src/style.css">
+</head>
+<body>
+  <!-- 3D Canvas Container -->
+  <div id="canvas-container"></div>
+
+  <!-- UI Overlay -->
+  <div id="ui-layer">
+    <!-- Top Header Navigation -->
+    <header class="glass-panel top-header">
+      <div class="brand">
+        <div class="brand-icon">🌰</div>
+        <div class="brand-text">
+          <h1>Şəki, Daşüz — Müasir İntensiv Fındıq Bağı</h1>
+          <p>0.8454 Ha (84.54 Sot) • 3D Rəqəmsal Əkini və Damcı Suvarma Modeli</p>
+        </div>
+      </div>
+      <div class="header-badges">
+        <span class="badge badge-emerald">Dəniz səviyyəsi: 261 – 266 m</span>
+        <span class="badge badge-amber">İntensiv İtalyan Sortu</span>
+        <span class="badge badge-blue">Damcı Suvarma 100%</span>
+      </div>
+    </header>
+
+    <!-- Left Sidebar: Cadastre & Planning -->
+    <aside class="glass-panel left-panel">
+      <div class="panel-section">
+        <div class="section-title">
+          <span>📋 Torpaq & Kadastr Məlumatları</span>
+        </div>
+        <div class="info-grid">
+          <div class="info-item">
+            <span class="label">Ünvan:</span>
+            <span class="val">Şəki ray., Daşüz kəndi</span>
+          </div>
+          <div class="info-item">
+            <span class="label">Reyestr №:</span>
+            <span class="val">404013086167</span>
+          </div>
+          <div class="info-item">
+            <span class="label">Faktiki sahə:</span>
+            <span class="val highlight">0.8454 ha (84.54 sot)</span>
+          </div>
+          <div class="info-item">
+            <span class="label">Ölçülər:</span>
+            <span class="val">~26.5 m en x 320 m uzunluq</span>
+          </div>
+          <div class="info-item">
+            <span class="label">Torpaq təyinatı:</span>
+            <span class="val text-success">Kənd təsərrüfatı</span>
+          </div>
+          <div class="info-item">
+            <span class="label">Mülkiyyətçi:</span>
+            <span class="val">Seyidov C. V. (birgə)</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="panel-section">
+        <div class="section-title">
+          <span>💰 Dövlət Subsidiyası & Güzəşt</span>
+        </div>
+        <div class="subsidy-box">
+          <div class="subsidy-row">
+            <span>Birdəfəlik Əkin Subsidiyası:</span>
+            <strong class="text-emerald">~3 200 AZN</strong>
+          </div>
+          <small class="hint">İntensiv bağ + damcı suvarma üçün (EKTİS)</small>
+          <div class="subsidy-row mt-2">
+            <span>Suvarma Sistemi Güzəşti:</span>
+            <strong class="text-blue">40% – 60%</strong>
+          </div>
+          <small class="hint">AKİA lizinq / birbaşa dövlət güzəşti</small>
+        </div>
+      </div>
+
+      <!-- Quick Legend -->
+      <div class="panel-section">
+        <div class="section-title">
+          <span>🎨 Xəritə İzahı (Legend)</span>
+        </div>
+        <div class="legend-list">
+          <div class="legend-item">
+            <span class="dot main-tree-dot"></span>
+            <span>Əsas: <strong>Tonda di Giffoni</strong> (268 əd.)</span>
+          </div>
+          <div class="legend-item">
+            <span class="dot pollinizer-dot"></span>
+            <span>Tozlayıcı: <strong>Nocchione / Mortarella</strong> (32 əd.)</span>
+          </div>
+          <div class="legend-item">
+            <span class="line drip-line"></span>
+            <span>Damcı suvarma xətləri (5 cərgə x 320m)</span>
+          </div>
+          <div class="legend-item">
+            <span class="line border-line"></span>
+            <span>Kadastr mülkiyyət sərhədi (Çıxarış)</span>
+          </div>
+        </div>
+      </div>
+    </aside>
+
+    <!-- Right Sidebar: Tree Inspector (Dynamically shown on tree click) -->
+    <div id="inspector-card" class="glass-panel right-inspector hidden">
+      <div class="inspector-header">
+        <h3 id="tree-title">Ağac Məlumatı</h3>
+        <button id="close-inspector-btn" aria-label="Bağla">&times;</button>
+      </div>
+      <div class="inspector-body">
+        <div class="tree-badge-container">
+          <span id="tree-badge" class="badge">Əsas Sort</span>
+        </div>
+        <div class="inspector-row">
+          <span>Cərgə / Mövqe:</span>
+          <strong id="tree-pos">Cərgə 1, № 5</strong>
+        </div>
+        <div class="inspector-row">
+          <span>Sort adı:</span>
+          <strong id="tree-variety">Tonda di Giffoni</strong>
+        </div>
+        <div class="inspector-row">
+          <span>Əkin növü:</span>
+          <span id="tree-type">Tək gövdəli intensiv</span>
+        </div>
+        <div class="inspector-row">
+          <span>Suvarma rejimi:</span>
+          <span id="tree-irrigation">Damcı (2.5 litr/saat)</span>
+        </div>
+        <div class="inspector-row">
+          <span>Tozlanma məsafəsi:</span>
+          <span id="tree-pollination-status" class="text-success">Əla (&lt; 12 metr)</span>
+        </div>
+        <div class="inspector-row">
+          <span>Gözlənilən ilk bar:</span>
+          <span>2-ci il (2028)</span>
+        </div>
+        <div class="inspector-row">
+          <span>Tam məhsul dövrü:</span>
+          <span>4-cü ildən (2.5 - 3 ton/ha)</span>
+        </div>
+      </div>
+      <div class="inspector-footer">
+        <small>📍 Şəki Daşüz torpaq analizlərinə tam uyğundur</small>
+      </div>
+    </div>
+
+    <!-- Bottom Controls & Camera Modes -->
+    <div class="bottom-controls">
+      <!-- Camera View Modes -->
+      <div class="glass-panel pill-bar">
+        <button class="cam-btn active" data-cam="orbit">
+          <span class="btn-icon">🌐</span> 3D İcmal
+        </button>
+        <button class="cam-btn" data-cam="top">
+          <span class="btn-icon">📐</span> 2D Kadastr Planı
+        </button>
+        <button class="cam-btn" data-cam="walk">
+          <span class="btn-icon">🚶</span> Cərgə Gəzintisi
+        </button>
+      </div>
+
+      <!-- Feature Toggles -->
+      <div class="glass-panel pill-bar ml-3">
+        <button id="toggle-irrigation-btn" class="feature-btn">
+          <span class="btn-icon">💧</span> Damcı Suvarma: <span class="state-txt text-emerald">AÇIQ</span>
+        </button>
+        <button id="toggle-pollinators-btn" class="feature-btn">
+          <span class="btn-icon">⭐</span> Tozlayıcıları Vurğula
+        </button>
+        <button id="toggle-wind-btn" class="feature-btn">
+          <span class="btn-icon">🍃</span> Külək & Tozlanma
+        </button>
+        <button id="toggle-dimensions-btn" class="feature-btn">
+          <span class="btn-icon">📏</span> Ölçü Xətləri
+        </button>
+      </div>
+    </div>
+
+    <!-- Interactive Hint Banner -->
+    <div class="hint-banner">
+      <span>💡 İpucu: Siçanla 3D səhnəni fırladın, təkəri ilə yaxınlaşdırın və istənilən ağacın üstünə klikləyərək məlumatlarına baxın.</span>
+    </div>
+  </div>
+
+  <script type="module" src="/src/main.js"></script>
+</body>
+</html>
