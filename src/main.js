@@ -6,15 +6,19 @@ let scene, camera, renderer, controls;
 let container = document.getElementById('canvas-container');
 let trees = [];
 let pollinatorTrees = [];
-let irrigationGroup, dimensionsGroup, pollenParticles, boundaryGroup;
+let irrigationGroup, dimensionsGroup, pollenParticles, boundaryGroup, mountainsGroup;
 let selectedTreeMesh = null;
 let highlightRing = null;
+let hemiLight, sunLight, fillLight;
+let skyMesh;
+
 const clock = new THREE.Clock();
 
 let isIrrigationOn = true;
 let isPollinatorsHighlighted = false;
 let isWindOn = false;
 let isDimensionsOn = true;
+let currentTimeMode = 'day';
 
 const raycaster = new THREE.Raycaster();
 const mouse = new THREE.Vector2();
@@ -24,29 +28,61 @@ const PLOT_WIDTH = 26.5;
 const PLOT_LENGTH = 320.0;
 const ROWS_COUNT = 5;
 const TREES_PER_ROW = 60;
-const ROW_SPACING = 5.0; // 5 rows centered
+const ROW_SPACING = 5.0; // 5 rows centered: -10, -5, 0, 5, 10
 const TREE_SPACING = (PLOT_LENGTH - 24) / (TREES_PER_ROW - 1); // ~5.02m spacing
 
 // Camera View Presets
 const CAM_PRESETS = {
-  orbit: { pos: new THREE.Vector3(65, 55, 75), target: new THREE.Vector3(0, 0, 0) },
-  top: { pos: new THREE.Vector3(0, 220, 0.1), target: new THREE.Vector3(0, 0, 0) },
-  walk: { pos: new THREE.Vector3(0, 1.8, -135), target: new THREE.Vector3(0, 1.8, 100) }
+  orbit: { pos: new THREE.Vector3(55, 42, 60), target: new THREE.Vector3(0, 0, 0) },
+  top: { pos: new THREE.Vector3(0, 240, 0.1), target: new THREE.Vector3(0, 0, 0) },
+  walk: { pos: new THREE.Vector3(0, 1.8, -135), target: new THREE.Vector3(0, 1.8, 80) }
 };
 
-let currentCamMode = 'orbit';
+// Lighting / Atmosphere Themes
+const TIME_THEMES = {
+  day: {
+    skyTop: 0x38bdf8,
+    skyBottom: 0xdcfce7,
+    fogColor: 0x93c5fd,
+    sunColor: 0xfff7ed,
+    sunIntensity: 2.4,
+    hemiSky: 0xe0f2fe,
+    hemiGround: 0x2e4a3d,
+    hemiIntensity: 0.95,
+    exposure: 1.15
+  },
+  sunset: {
+    skyTop: 0x6366f1,
+    skyBottom: 0xf97316,
+    fogColor: 0xfb923c,
+    sunColor: 0xfdba74,
+    sunIntensity: 2.8,
+    hemiSky: 0xfbbf24,
+    hemiGround: 0x3d1a24,
+    hemiIntensity: 0.7,
+    exposure: 1.25
+  },
+  night: {
+    skyTop: 0x030712,
+    skyBottom: 0x0f172a,
+    fogColor: 0x0b132b,
+    sunColor: 0x93c5fd,
+    sunIntensity: 0.6,
+    hemiSky: 0x1e293b,
+    hemiGround: 0x080f0c,
+    hemiIntensity: 0.4,
+    exposure: 0.95
+  }
+};
 
 init();
 animate();
 
 function init() {
-  // 1. Scene & Atmosphere
+  // 1. Scene & Setup
   scene = new THREE.Scene();
-  scene.background = new THREE.Color(0x0a1410);
-  scene.fog = new THREE.FogExp2(0x0d1f18, 0.0035);
 
-  // 2. Camera & Renderer
-  camera = new THREE.PerspectiveCamera(45, window.innerWidth / window.innerHeight, 0.5, 1200);
+  camera = new THREE.PerspectiveCamera(45, window.innerWidth / window.innerHeight, 0.5, 1500);
   camera.position.copy(CAM_PRESETS.orbit.pos);
 
   renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'high-performance' });
@@ -58,99 +94,184 @@ function init() {
   renderer.toneMappingExposure = 1.15;
   container.appendChild(renderer.domElement);
 
-  // 3. Controls
+  // 2. Controls
   controls = new OrbitControls(camera, renderer.domElement);
   controls.enableDamping = true;
   controls.dampingFactor = 0.05;
-  controls.maxPolarAngle = Math.PI / 2 - 0.02; // Don't go below ground
-  controls.minDistance = 3;
-  controls.maxDistance = 500;
+  controls.maxPolarAngle = Math.PI / 2 - 0.01;
+  controls.minDistance = 2;
+  controls.maxDistance = 550;
   controls.target.copy(CAM_PRESETS.orbit.target);
 
-  // 4. Lighting (Warm sun + soft ambient sky light)
+  // 3. Atmosphere & Sky
+  createAtmosphericSky();
+  createCaucasusMountains();
   setupLights();
 
-  // 5. Environment & Ground
+  // 4. Ground & Cadastral Boundaries
   createTerrain();
   createCadastralBoundary();
   createDimensions();
 
-  // 6. Hazelnut Trees (Main + Pollinizers)
+  // 5. Realistic Hazelnut Trees
   createTrees();
 
-  // 7. Drip Irrigation System & Pump Station
+  // 6. Drip Irrigation System with Pump & Filter
   createIrrigationSystem();
 
-  // 8. Pollen & Wind Particle System
+  // 7. Pollen & Wind Particle System
   createPollenParticles();
 
-  // 9. Highlight Ring for Selection
+  // 8. Selection Highlight Ring
   createHighlightRing();
 
-  // 10. Event Listeners
+  // 9. Event Listeners & UI
   window.addEventListener('resize', onWindowResize);
   renderer.domElement.addEventListener('pointerdown', onPointerDown);
 
   setupUI();
+  applyTimeTheme('day');
+}
+
+function createAtmosphericSky() {
+  // Giant Sky Dome with procedural gradient
+  const skyGeom = new THREE.SphereGeometry(700, 32, 24);
+  const vertexShader = `
+    varying vec3 vWorldPosition;
+    void main() {
+      vec4 worldPosition = modelMatrix * vec4(position, 1.0);
+      vWorldPosition = worldPosition.xyz;
+      gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+    }
+  `;
+  const fragmentShader = `
+    uniform vec3 topColor;
+    uniform vec3 bottomColor;
+    varying vec3 vWorldPosition;
+    void main() {
+      float h = normalize(vWorldPosition).y;
+      gl_FragColor = vec4(mix(bottomColor, topColor, max(h, 0.0)), 1.0);
+    }
+  `;
+
+  const uniforms = {
+    topColor: { value: new THREE.Color(TIME_THEMES.day.skyTop) },
+    bottomColor: { value: new THREE.Color(TIME_THEMES.day.skyBottom) }
+  };
+
+  const skyMat = new THREE.ShaderMaterial({
+    vertexShader,
+    fragmentShader,
+    uniforms,
+    side: THREE.BackSide
+  });
+
+  skyMesh = new THREE.Mesh(skyGeom, skyMat);
+  scene.add(skyMesh);
+
+  scene.fog = new THREE.FogExp2(TIME_THEMES.day.fogColor, 0.0018);
+}
+
+function createCaucasusMountains() {
+  mountainsGroup = new THREE.Group();
+
+  // Mountain ridge in the north (Daşüz is near the foothills)
+  const mountainCount = 18;
+  const mountainGeom = new THREE.ConeGeometry(55, 85, 5);
+  const mountainMat = new THREE.MeshStandardMaterial({
+    color: 0x223a30,
+    roughness: 0.95,
+    flatShading: true
+  });
+
+  for (let i = 0; i < mountainCount; i++) {
+    const m = new THREE.Mesh(mountainGeom, mountainMat);
+    const x = (i - mountainCount / 2) * 45 + (Math.random() - 0.5) * 20;
+    const z = -280 - Math.random() * 80;
+    const scale = 0.8 + Math.random() * 0.7;
+    m.scale.set(scale, scale * (1 + Math.random() * 0.4), scale);
+    m.position.set(x, 30 * scale, z);
+    m.rotation.y = Math.random() * Math.PI;
+    mountainsGroup.add(m);
+  }
+
+  scene.add(mountainsGroup);
 }
 
 function setupLights() {
-  const hemiLight = new THREE.HemisphereLight(0xcdeee1, 0x1b2e25, 0.85);
+  hemiLight = new THREE.HemisphereLight(0xe0f2fe, 0x2e4a3d, 0.95);
   scene.add(hemiLight);
 
-  const sunLight = new THREE.DirectionalLight(0xfffaed, 2.2);
-  sunLight.position.set(120, 160, -90);
+  sunLight = new THREE.DirectionalLight(0xfff7ed, 2.4);
+  sunLight.position.set(130, 180, -90);
   sunLight.castShadow = true;
   sunLight.shadow.mapSize.width = 2048;
   sunLight.shadow.mapSize.height = 2048;
   sunLight.shadow.camera.near = 10;
-  sunLight.shadow.camera.far = 400;
+  sunLight.shadow.camera.far = 500;
   sunLight.shadow.camera.left = -170;
   sunLight.shadow.camera.right = 170;
   sunLight.shadow.camera.top = 170;
   sunLight.shadow.camera.bottom = -170;
-  sunLight.shadow.bias = -0.0005;
+  sunLight.shadow.bias = -0.0004;
   scene.add(sunLight);
 
-  const fillLight = new THREE.DirectionalLight(0xa7f3d0, 0.4);
-  fillLight.position.set(-80, 50, 80);
+  fillLight = new THREE.DirectionalLight(0x6ee7b7, 0.45);
+  fillLight.position.set(-100, 60, 90);
   scene.add(fillLight);
 }
 
 function createTerrain() {
   // Main Plot (26.5m x 320m)
-  const geom = new THREE.PlaneGeometry(PLOT_WIDTH, PLOT_LENGTH, 32, 128);
+  const geom = new THREE.PlaneGeometry(PLOT_WIDTH, PLOT_LENGTH, 64, 256);
   geom.rotateX(-Math.PI / 2);
 
-  // Realistic natural ground texture
+  // High-Resolution Procedural Soil Texture
   const canvas = document.createElement('canvas');
-  canvas.width = 512;
-  canvas.height = 1024;
+  canvas.width = 1024;
+  canvas.height = 2048;
   const ctx = canvas.getContext('2d');
-  ctx.fillStyle = '#22382b';
-  ctx.fillRect(0, 0, 512, 1024);
 
-  // Tilled soil bands along the 5 rows
-  ctx.fillStyle = '#1c2f24';
+  // Base grass meadow
+  ctx.fillStyle = '#2d4734';
+  ctx.fillRect(0, 0, 1024, 2048);
+
+  // Tilled, rich loam soil along the 5 rows
   for (let i = 0; i < 5; i++) {
-    const x = (512 / 6) * (i + 1);
-    ctx.fillRect(x - 24, 0, 48, 1024);
+    const x = (1024 / 6) * (i + 1);
+
+    // Deep fertile dark soil bed
+    ctx.fillStyle = '#1c261e';
+    ctx.fillRect(x - 52, 0, 104, 2048);
+
+    // Raised soil ridge center
+    ctx.fillStyle = '#221e17';
+    ctx.fillRect(x - 30, 0, 60, 2048);
+
+    // Drip moistened circular spots along rows
+    for (let j = 0; j < 60; j++) {
+      const y = (2048 / 62) * (j + 1);
+      ctx.beginPath();
+      ctx.arc(x, y, 22, 0, Math.PI * 2);
+      ctx.fillStyle = '#111812';
+      ctx.fill();
+    }
   }
 
-  // Organic speckles
-  for (let i = 0; i < 4000; i++) {
-    ctx.fillStyle = Math.random() > 0.5 ? '#17271e' : '#2b4737';
-    ctx.fillRect(Math.random() * 512, Math.random() * 1024, 2, 2);
+  // Natural texture noise
+  for (let i = 0; i < 9000; i++) {
+    ctx.fillStyle = Math.random() > 0.5 ? '#243b2a' : '#182b20';
+    ctx.fillRect(Math.random() * 1024, Math.random() * 2048, 2, 2);
   }
 
   const texture = new THREE.CanvasTexture(canvas);
   texture.wrapS = THREE.RepeatWrapping;
   texture.wrapT = THREE.RepeatWrapping;
-  texture.repeat.set(1, 4);
+  texture.repeat.set(1, 1);
 
   const mat = new THREE.MeshStandardMaterial({
     map: texture,
-    roughness: 0.88,
+    roughness: 0.85,
     metalness: 0.05
   });
 
@@ -159,14 +280,14 @@ function createTerrain() {
   scene.add(ground);
 
   // Surrounding vast landscape
-  const outerGeom = new THREE.PlaneGeometry(800, 800);
+  const outerGeom = new THREE.PlaneGeometry(900, 900);
   outerGeom.rotateX(-Math.PI / 2);
   const outerMat = new THREE.MeshStandardMaterial({
-    color: 0x121e18,
+    color: 0x1e3325,
     roughness: 0.95
   });
   const outerGround = new THREE.Mesh(outerGeom, outerMat);
-  outerGround.position.y = -0.05;
+  outerGround.position.y = -0.08;
   outerGround.receiveShadow = true;
   scene.add(outerGround);
 }
@@ -174,35 +295,35 @@ function createTerrain() {
 function createCadastralBoundary() {
   boundaryGroup = new THREE.Group();
 
-  // Red cadastral perimeter line
   const halfW = PLOT_WIDTH / 2;
   const halfL = PLOT_LENGTH / 2;
   const points = [
-    new THREE.Vector3(-halfW, 0.1, -halfL),
-    new THREE.Vector3(halfW, 0.1, -halfL),
-    new THREE.Vector3(halfW, 0.1, halfL),
-    new THREE.Vector3(-halfW, 0.1, halfL),
-    new THREE.Vector3(-halfW, 0.1, -halfL)
+    new THREE.Vector3(-halfW, 0.15, -halfL),
+    new THREE.Vector3(halfW, 0.15, -halfL),
+    new THREE.Vector3(halfW, 0.15, halfL),
+    new THREE.Vector3(-halfW, 0.15, halfL),
+    new THREE.Vector3(-halfW, 0.15, -halfL)
   ];
 
+  // Neon-red dashed boundary line
   const lineGeom = new THREE.BufferGeometry().setFromPoints(points);
   const lineMat = new THREE.LineDashedMaterial({
     color: 0xef4444,
-    dashSize: 2,
-    gapSize: 1,
+    dashSize: 2.5,
+    gapSize: 1.2,
     linewidth: 2
   });
   const borderLine = new THREE.Line(lineGeom, lineMat);
   borderLine.computeLineDistances();
   boundaryGroup.add(borderLine);
 
-  // Boundary Corner Posts (5 Cadastral Points)
-  const postGeom = new THREE.CylinderGeometry(0.12, 0.15, 1.2, 8);
-  const postMat = new THREE.MeshStandardMaterial({ color: 0xef4444, roughness: 0.4 });
+  // Cadastral Corner Boundary Pillars
+  const postGeom = new THREE.CylinderGeometry(0.14, 0.18, 1.4, 8);
+  const postMat = new THREE.MeshStandardMaterial({ color: 0xdc2626, roughness: 0.35 });
 
-  points.slice(0, 4).forEach((pt, i) => {
+  points.slice(0, 4).forEach((pt) => {
     const post = new THREE.Mesh(postGeom, postMat);
-    post.position.set(pt.x, 0.6, pt.z);
+    post.position.set(pt.x, 0.7, pt.z);
     post.castShadow = true;
     boundaryGroup.add(post);
   });
@@ -218,29 +339,27 @@ function createDimensions() {
 
   // Width ruler label line (26.5m)
   createDimensionLine(
-    new THREE.Vector3(-halfW, 0.2, -halfL - 4),
-    new THREE.Vector3(halfW, 0.2, -halfL - 4),
-    'Eni: 26.5 metr'
+    new THREE.Vector3(-halfW, 0.2, -halfL - 4.5),
+    new THREE.Vector3(halfW, 0.2, -halfL - 4.5)
   );
 
   // Length ruler label line (320m)
   createDimensionLine(
-    new THREE.Vector3(halfW + 4, 0.2, -halfL),
-    new THREE.Vector3(halfW + 4, 0.2, halfL),
-    'Uzunluğu: 320 metr (0.8454 Ha / 84.54 Sot)'
+    new THREE.Vector3(halfW + 4.5, 0.2, -halfL),
+    new THREE.Vector3(halfW + 4.5, 0.2, halfL)
   );
 
   scene.add(dimensionsGroup);
 }
 
-function createDimensionLine(start, end, labelText) {
+function createDimensionLine(start, end) {
   const lineGeom = new THREE.BufferGeometry().setFromPoints([start, end]);
   const lineMat = new THREE.LineBasicMaterial({ color: 0x38bdf8 });
   const line = new THREE.Line(lineGeom, lineMat);
   dimensionsGroup.add(line);
 
   // End ticks
-  const tickGeom = new THREE.CylinderGeometry(0.04, 0.04, 1.5, 6);
+  const tickGeom = new THREE.CylinderGeometry(0.04, 0.04, 1.8, 6);
   const tickMat = new THREE.MeshBasicMaterial({ color: 0x38bdf8 });
 
   const tick1 = new THREE.Mesh(tickGeom, tickMat);
@@ -255,42 +374,61 @@ function createDimensionLine(start, end, labelText) {
 }
 
 function createTrees() {
-  const trunkGeom = new THREE.CylinderGeometry(0.08, 0.14, 1.6, 7);
-  const trunkMat = new THREE.MeshStandardMaterial({ color: 0x5a3e2b, roughness: 0.9 });
-
-  const mainCrownGeom = new THREE.DodecahedronGeometry(1.3, 1);
-  const mainCrownMat = new THREE.MeshStandardMaterial({
-    color: 0x2e8b57,
-    roughness: 0.8,
-    metalness: 0.1
+  // Realistic Hazelnut Tree Geometry:
+  // Tapered trunk + flared base
+  const trunkGeom = new THREE.CylinderGeometry(0.07, 0.16, 1.6, 8);
+  const trunkMat = new THREE.MeshStandardMaterial({
+    color: 0x4a3222,
+    roughness: 0.9,
+    metalness: 0.05
   });
 
-  const pollinizerCrownMat = new THREE.MeshStandardMaterial({
-    color: 0x65a30d,
+  // Base root flare
+  const rootGeom = new THREE.CylinderGeometry(0.16, 0.28, 0.35, 8);
+
+  // Foliage cluster geometry
+  const foliageClusterGeom = new THREE.DodecahedronGeometry(0.85, 2);
+
+  const mainLeafMat = new THREE.MeshStandardMaterial({
+    color: 0x2d6a4f,
+    roughness: 0.72,
+    metalness: 0.08,
+    flatShading: true
+  });
+
+  const mainLeafMatAccent = new THREE.MeshStandardMaterial({
+    color: 0x40916c,
     roughness: 0.7,
-    metalness: 0.15
+    flatShading: true
   });
 
-  // Pollinizer Identification Stake
-  const stakeGeom = new THREE.CylinderGeometry(0.03, 0.03, 1.8, 6);
-  const stakeMat = new THREE.MeshStandardMaterial({ color: 0xf59e0b, roughness: 0.3 });
+  const pollinizerLeafMat = new THREE.MeshStandardMaterial({
+    color: 0x74a822,
+    roughness: 0.65,
+    flatShading: true
+  });
+
+  const catkinMat = new THREE.MeshStandardMaterial({
+    color: 0xf59e0b,
+    roughness: 0.5
+  });
+
+  // Identification Stake for Pollinizers
+  const stakeGeom = new THREE.CylinderGeometry(0.03, 0.03, 1.9, 6);
+  const stakeMat = new THREE.MeshStandardMaterial({ color: 0xf97316, roughness: 0.3 });
 
   let treeCounter = 1;
   const startZ = -(PLOT_LENGTH / 2) + 12;
 
   for (let r = 0; r < ROWS_COUNT; r++) {
-    // 5 rows: X = -10, -5, 0, 5, 10
     const rowX = (r - 2) * ROW_SPACING;
 
     for (let c = 0; c < TREES_PER_ROW; c++) {
       const treeZ = startZ + c * TREE_SPACING;
 
       // Determine if pollinizer (Staggered chess pattern every 10 trees)
-      // Row 0, 2, 4: indices 4, 14, 24, 34, 44, 54
-      // Row 1, 3: indices 9, 19, 29, 39, 49, 59
       let isPollinizer = false;
       let variety = 'Tonda di Giffoni (Əsas İntensiv)';
-      let pollinizerVariety = '';
 
       if (r % 2 === 0 && (c % 10 === 4)) {
         isPollinizer = true;
@@ -299,54 +437,82 @@ function createTrees() {
       }
 
       if (isPollinizer) {
-        pollinizerVariety = (treeCounter % 2 === 0) ? 'Nocchione (Tozlayıcı)' : 'Mortarella (Tozlayıcı)';
-        variety = pollinizerVariety;
+        variety = (treeCounter % 2 === 0) ? 'Nocchione (Tozlayıcı)' : 'Mortarella (Tozlayıcı)';
       }
 
-      // Build Tree Group
       const treeGroup = new THREE.Group();
       treeGroup.position.set(rowX, 0, treeZ);
 
-      // Random gentle scale variation
-      const scaleVariation = 0.9 + Math.random() * 0.2;
+      const naturalScale = 0.92 + Math.random() * 0.16;
 
-      // Trunk
+      // 1. Trunk & Roots
       const trunk = new THREE.Mesh(trunkGeom, trunkMat);
       trunk.position.y = 0.8;
+      trunk.rotation.z = (Math.random() - 0.5) * 0.08;
       trunk.castShadow = true;
       trunk.receiveShadow = true;
       treeGroup.add(trunk);
 
-      // Crown
-      const crown = new THREE.Mesh(
-        mainCrownGeom,
-        isPollinizer ? pollinizerCrownMat : mainCrownMat
-      );
-      crown.position.y = 2.0;
-      crown.scale.set(scaleVariation, scaleVariation * 1.1, scaleVariation);
-      crown.rotation.y = Math.random() * Math.PI;
-      crown.castShadow = true;
-      crown.receiveShadow = true;
-      treeGroup.add(crown);
+      const roots = new THREE.Mesh(rootGeom, trunkMat);
+      roots.position.y = 0.17;
+      roots.castShadow = true;
+      roots.receiveShadow = true;
+      treeGroup.add(roots);
 
-      // If pollinizer, add identification stake
+      // 2. Multi-Cluster Organic Canopy (3-4 intersecting clusters)
+      const canopyGroup = new THREE.Group();
+      canopyGroup.position.y = 1.9;
+
+      const clusterOffsets = [
+        { x: 0, y: 0.25, z: 0, s: 1.15 },
+        { x: 0.45, y: -0.1, z: 0.2, s: 0.85 },
+        { x: -0.4, y: -0.05, z: -0.25, s: 0.88 },
+        { x: 0.15, y: -0.15, z: -0.38, s: 0.78 }
+      ];
+
+      const currentMat = isPollinizer ? pollinizerLeafMat : mainLeafMat;
+
+      clusterOffsets.forEach((off, idx) => {
+        const cluster = new THREE.Mesh(
+          foliageClusterGeom,
+          (idx % 2 === 1 && !isPollinizer) ? mainLeafMatAccent : currentMat
+        );
+        cluster.position.set(off.x, off.y, off.z);
+        cluster.scale.setScalar(off.s * naturalScale);
+        cluster.rotation.set(Math.random() * Math.PI, Math.random() * Math.PI, 0);
+        cluster.castShadow = true;
+        cluster.receiveShadow = true;
+        canopyGroup.add(cluster);
+      });
+
+      // Pollinizer Golden Catkin Accents & Stake
       if (isPollinizer) {
+        // Golden catkin tassels hanging from canopy
+        for (let k = 0; k < 3; k++) {
+          const catkin = new THREE.Mesh(new THREE.CylinderGeometry(0.04, 0.05, 0.35, 6), catkinMat);
+          catkin.position.set((k - 1) * 0.4, -0.45, (Math.random() - 0.5) * 0.3);
+          canopyGroup.add(catkin);
+        }
+
+        // Orange identification stake
         const stake = new THREE.Mesh(stakeGeom, stakeMat);
-        stake.position.set(0.25, 0.9, 0.1);
-        stake.rotation.z = 0.08;
+        stake.position.set(0.3, 0.95, 0.15);
+        stake.rotation.z = 0.06;
         treeGroup.add(stake);
 
-        // Small indicator glow sphere
-        const markerGeom = new THREE.SphereGeometry(0.12, 8, 8);
-        const markerMat = new THREE.MeshBasicMaterial({ color: 0xf59e0b });
-        const marker = new THREE.Mesh(markerGeom, markerMat);
-        marker.position.set(0.25, 1.85, 0.1);
-        treeGroup.add(marker);
+        // Marker indicator flag
+        const flagGeom = new THREE.BoxGeometry(0.2, 0.15, 0.02);
+        const flagMat = new THREE.MeshBasicMaterial({ color: 0xf97316 });
+        const flag = new THREE.Mesh(flagGeom, flagMat);
+        flag.position.set(0.42, 1.8, 0.15);
+        treeGroup.add(flag);
 
         pollinatorTrees.push(treeGroup);
       }
 
-      // Metadata for Raycasting & Inspection
+      treeGroup.add(canopyGroup);
+
+      // Metadata for Inspector
       treeGroup.userData = {
         id: treeCounter++,
         row: r + 1,
@@ -369,57 +535,72 @@ function createTrees() {
 function createIrrigationSystem() {
   irrigationGroup = new THREE.Group();
 
-  const pipeMat = new THREE.MeshStandardMaterial({ color: 0x111827, roughness: 0.6 });
+  const pipeMat = new THREE.MeshStandardMaterial({ color: 0x111827, roughness: 0.5 });
   const waterDropMat = new THREE.MeshBasicMaterial({ color: 0x38bdf8 });
 
-  // 1. Main header pipe across the width at the start
-  const mainPipeGeom = new THREE.CylinderGeometry(0.06, 0.06, PLOT_WIDTH - 4, 12);
+  // 1. Main Header Distribution Pipe (across width)
+  const mainPipeGeom = new THREE.CylinderGeometry(0.07, 0.07, PLOT_WIDTH - 3.5, 12);
   const mainPipe = new THREE.Mesh(mainPipeGeom, pipeMat);
   mainPipe.rotation.z = Math.PI / 2;
-  mainPipe.position.set(0, 0.05, -(PLOT_LENGTH / 2) + 8);
+  mainPipe.position.set(0, 0.07, -(PLOT_LENGTH / 2) + 8);
   irrigationGroup.add(mainPipe);
 
-  // 2. Filtration & Pump Station at north-west corner
+  // 2. Filtration & Fertigation Station
   const pumpStation = new THREE.Group();
   pumpStation.position.set(-PLOT_WIDTH / 2 + 2, 0, -(PLOT_LENGTH / 2) + 7);
 
-  // Disc filter cylinder (Blue)
-  const filterGeom = new THREE.CylinderGeometry(0.3, 0.3, 1.1, 16);
-  const filterMat = new THREE.MeshStandardMaterial({ color: 0x2563eb, roughness: 0.4 });
+  // Base platform
+  const baseGeom = new THREE.BoxGeometry(2.4, 0.15, 1.8);
+  const baseMat = new THREE.MeshStandardMaterial({ color: 0x374151, roughness: 0.7 });
+  const baseMesh = new THREE.Mesh(baseGeom, baseMat);
+  baseMesh.position.y = 0.08;
+  pumpStation.add(baseMesh);
+
+  // Disc filter cylinder (Industrial Blue)
+  const filterGeom = new THREE.CylinderGeometry(0.32, 0.32, 1.2, 16);
+  const filterMat = new THREE.MeshStandardMaterial({ color: 0x1d4ed8, roughness: 0.35 });
   const filterMesh = new THREE.Mesh(filterGeom, filterMat);
-  filterMesh.position.y = 0.55;
+  filterMesh.position.set(-0.5, 0.7, 0);
   filterMesh.castShadow = true;
   pumpStation.add(filterMesh);
 
-  // Venturi fertilizer tank (White)
-  const fertGeom = new THREE.CylinderGeometry(0.35, 0.35, 0.9, 16);
+  // Pressure gauge on filter
+  const gaugeGeom = new THREE.CylinderGeometry(0.09, 0.09, 0.05, 12);
+  const gaugeMat = new THREE.MeshStandardMaterial({ color: 0xd97706, roughness: 0.3 });
+  const gaugeMesh = new THREE.Mesh(gaugeGeom, gaugeMat);
+  gaugeMesh.rotation.x = Math.PI / 2;
+  gaugeMesh.position.set(-0.5, 1.35, 0.25);
+  pumpStation.add(gaugeMesh);
+
+  // Venturi Fertilizer Tank (Clean White)
+  const fertGeom = new THREE.CylinderGeometry(0.38, 0.38, 1.0, 16);
   const fertMat = new THREE.MeshStandardMaterial({ color: 0xf3f4f6, roughness: 0.3 });
   const fertMesh = new THREE.Mesh(fertGeom, fertMat);
-  fertMesh.position.set(0.9, 0.45, 0);
+  fertMesh.position.set(0.65, 0.6, 0);
   fertMesh.castShadow = true;
   pumpStation.add(fertMesh);
 
   irrigationGroup.add(pumpStation);
 
-  // 3. 5 Drip lines running down the rows
+  // 3. 5 Lateral Drip lines running down each row
   const lineLength = PLOT_LENGTH - 16;
-  const lineGeom = new THREE.CylinderGeometry(0.02, 0.02, lineLength, 6);
+  const lineGeom = new THREE.CylinderGeometry(0.025, 0.025, lineLength, 6);
 
   for (let r = 0; r < ROWS_COUNT; r++) {
     const rowX = (r - 2) * ROW_SPACING;
     const dripLine = new THREE.Mesh(lineGeom, pipeMat);
     dripLine.rotation.x = Math.PI / 2;
-    dripLine.position.set(rowX, 0.03, 0);
+    dripLine.position.set(rowX, 0.04, 0);
     irrigationGroup.add(dripLine);
 
     // Emitters / Water Droplets under trees
-    const dropGeom = new THREE.SphereGeometry(0.04, 6, 6);
+    const dropGeom = new THREE.SphereGeometry(0.045, 6, 6);
     const startZ = -(PLOT_LENGTH / 2) + 12;
     for (let c = 0; c < TREES_PER_ROW; c++) {
       const tz = startZ + c * TREE_SPACING;
       const drop = new THREE.Mesh(dropGeom, waterDropMat);
-      drop.position.set(rowX + 0.15, 0.04, tz);
-      drop.userData = { isDripper: true, baseY: 0.04, phase: Math.random() * Math.PI };
+      drop.position.set(rowX + 0.16, 0.05, tz);
+      drop.userData = { isDripper: true, baseY: 0.05, phase: Math.random() * Math.PI };
       irrigationGroup.add(drop);
     }
   }
@@ -428,13 +609,13 @@ function createIrrigationSystem() {
 }
 
 function createPollenParticles() {
-  const particleCount = 400;
+  const particleCount = 450;
   const geom = new THREE.BufferGeometry();
   const positions = new Float32Array(particleCount * 3);
 
   for (let i = 0; i < particleCount; i++) {
     positions[i * 3] = (Math.random() - 0.5) * PLOT_WIDTH;
-    positions[i * 3 + 1] = 1.0 + Math.random() * 3.0;
+    positions[i * 3 + 1] = 1.0 + Math.random() * 3.2;
     positions[i * 3 + 2] = (Math.random() - 0.5) * PLOT_LENGTH;
   }
 
@@ -442,9 +623,9 @@ function createPollenParticles() {
 
   const mat = new THREE.PointsMaterial({
     color: 0xfacc15,
-    size: 0.25,
+    size: 0.3,
     transparent: true,
-    opacity: 0.0, // hidden initially
+    opacity: 0.0,
     blending: THREE.AdditiveBlending
   });
 
@@ -453,38 +634,45 @@ function createPollenParticles() {
 }
 
 function createHighlightRing() {
-  const ringGeom = new THREE.RingGeometry(1.2, 1.4, 32);
+  const ringGeom = new THREE.RingGeometry(1.2, 1.45, 32);
   ringGeom.rotateX(-Math.PI / 2);
   const ringMat = new THREE.MeshBasicMaterial({
     color: 0x34d399,
     side: THREE.DoubleSide,
     transparent: true,
-    opacity: 0.85
+    opacity: 0.9
   });
   highlightRing = new THREE.Mesh(ringGeom, ringMat);
-  highlightRing.position.y = 0.05;
+  highlightRing.position.y = 0.06;
   highlightRing.visible = false;
   scene.add(highlightRing);
 }
 
 function onPointerDown(event) {
-  // Raycast to select trees
   const rect = renderer.domElement.getBoundingClientRect();
   mouse.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
   mouse.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
 
   raycaster.setFromCamera(mouse, camera);
 
-  // Check intersection with all tree children
   const intersectObjects = [];
   trees.forEach(t => {
-    t.children.forEach(child => intersectObjects.push(child));
+    t.children.forEach(child => {
+      if (child.isGroup) {
+        child.children.forEach(c => intersectObjects.push(c));
+      } else {
+        intersectObjects.push(child);
+      }
+    });
   });
 
   const intersects = raycaster.intersectObjects(intersectObjects);
 
   if (intersects.length > 0) {
-    const hit = intersects[0].object.parent;
+    let hit = intersects[0].object;
+    while (hit.parent && !hit.userData.id) {
+      hit = hit.parent;
+    }
     if (hit && hit.userData && hit.userData.id) {
       selectTree(hit);
     }
@@ -494,11 +682,9 @@ function onPointerDown(event) {
 function selectTree(tree) {
   selectedTreeMesh = tree;
 
-  // Position highlight ring under tree
-  highlightRing.position.set(tree.position.x, 0.05, tree.position.z);
+  highlightRing.position.set(tree.position.x, 0.06, tree.position.z);
   highlightRing.visible = true;
 
-  // Show Inspector Panel
   const inspector = document.getElementById('inspector-card');
   const treeTitle = document.getElementById('tree-title');
   const treeBadge = document.getElementById('tree-badge');
@@ -538,6 +724,31 @@ function setupUI() {
     });
   });
 
+  // Time of Day buttons
+  document.querySelectorAll('.time-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      document.querySelectorAll('.time-btn').forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+      const time = btn.dataset.time;
+      applyTimeTheme(time);
+    });
+  });
+
+  // Left Panel Collapse / Expand
+  const leftPanel = document.getElementById('left-panel');
+  const togglePanelBtn = document.getElementById('toggle-panel-btn');
+  const openPanelBtn = document.getElementById('open-panel-btn');
+
+  togglePanelBtn.addEventListener('click', () => {
+    leftPanel.classList.add('collapsed');
+    openPanelBtn.classList.remove('hidden');
+  });
+
+  openPanelBtn.addEventListener('click', () => {
+    leftPanel.classList.remove('collapsed');
+    openPanelBtn.classList.add('hidden');
+  });
+
   // Close inspector
   document.getElementById('close-inspector-btn').addEventListener('click', () => {
     document.getElementById('inspector-card').classList.add('hidden');
@@ -569,7 +780,7 @@ function setupUI() {
   windBtn.addEventListener('click', () => {
     isWindOn = !isWindOn;
     windBtn.classList.toggle('active', isWindOn);
-    pollenParticles.material.opacity = isWindOn ? 0.75 : 0.0;
+    pollenParticles.material.opacity = isWindOn ? 0.8 : 0.0;
   });
 
   // Toggle Dimensions
@@ -581,12 +792,31 @@ function setupUI() {
   });
 }
 
+function applyTimeTheme(themeName) {
+  currentTimeMode = themeName;
+  const theme = TIME_THEMES[themeName];
+  if (!theme) return;
+
+  // Sky shader colors
+  if (skyMesh && skyMesh.material.uniforms) {
+    skyMesh.material.uniforms.topColor.value.setHex(theme.skyTop);
+    skyMesh.material.uniforms.bottomColor.value.setHex(theme.skyBottom);
+  }
+
+  // Fog & Lights
+  scene.fog.color.setHex(theme.fogColor);
+  sunLight.color.setHex(theme.sunColor);
+  sunLight.intensity = theme.sunIntensity;
+  hemiLight.color.setHex(theme.hemiSky);
+  hemiLight.groundColor.setHex(theme.hemiGround);
+  hemiLight.intensity = theme.hemiIntensity;
+  renderer.toneMappingExposure = theme.exposure;
+}
+
 function switchCameraMode(mode) {
-  currentCamMode = mode;
   const target = CAM_PRESETS[mode];
   if (!target) return;
 
-  // Smooth transition
   const startPos = camera.position.clone();
   const startTarget = controls.target.clone();
   const duration = 1200;
@@ -595,7 +825,7 @@ function switchCameraMode(mode) {
   function step(now) {
     const elapsed = now - startTime;
     const progress = Math.min(elapsed / duration, 1.0);
-    const ease = 0.5 - Math.cos(progress * Math.PI) / 2; // smooth ease-in-out
+    const ease = 0.5 - Math.cos(progress * Math.PI) / 2;
 
     camera.position.lerpVectors(startPos, target.pos, ease);
     controls.target.lerpVectors(startTarget, target.target, ease);
@@ -622,30 +852,28 @@ function animate() {
   const delta = clock.getDelta();
   const time = clock.getElapsedTime();
 
-  // 1. Controls update
   controls.update();
 
-  // 2. Animate Highlight ring rotation
+  // Selection ring rotation
   if (highlightRing && highlightRing.visible) {
-    highlightRing.rotation.z += 0.015;
+    highlightRing.rotation.z += 0.02;
   }
 
-  // 3. Animate Water drops if irrigation on
+  // Animate Water drops
   if (isIrrigationOn && irrigationGroup.visible) {
     irrigationGroup.children.forEach(child => {
       if (child.userData && child.userData.isDripper) {
-        child.position.y = child.userData.baseY + Math.sin(time * 6 + child.userData.phase) * 0.02;
+        child.position.y = child.userData.baseY + Math.sin(time * 6 + child.userData.phase) * 0.025;
       }
     });
   }
 
-  // 4. Animate Pollen Drift if Wind ON
+  // Animate Pollen Drift
   if (isWindOn && pollenParticles) {
     const positions = pollenParticles.geometry.attributes.position.array;
     for (let i = 0; i < positions.length; i += 3) {
-      // Wind blowing along Z axis (from north to south) and slightly across X
-      positions[i] += Math.sin(time + positions[i + 2]) * 0.03; // slight X drift
-      positions[i + 2] += 0.35; // move along row
+      positions[i] += Math.sin(time + positions[i + 2]) * 0.035;
+      positions[i + 2] += 0.4;
 
       if (positions[i + 2] > PLOT_LENGTH / 2) {
         positions[i + 2] = -PLOT_LENGTH / 2;
