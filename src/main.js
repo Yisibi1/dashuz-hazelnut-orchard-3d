@@ -6,7 +6,8 @@ let scene, camera, renderer, controls;
 let container = document.getElementById('canvas-container');
 let trees = [];
 let pollinatorTrees = [];
-let irrigationGroup, dimensionsGroup, pollenParticles, boundaryGroup, mountainsGroup;
+let irrigationGroup, dimensionsGroup, pollenParticles, boundaryGroup, mountainsGroup, riverGroup;
+let waterPulses = [];
 let selectedTreeMesh = null;
 let highlightRing = null;
 let hemiLight, sunLight, fillLight;
@@ -35,7 +36,8 @@ const TREE_SPACING = (PLOT_LENGTH - 24) / (TREES_PER_ROW - 1); // ~5.02m spacing
 const CAM_PRESETS = {
   orbit: { pos: new THREE.Vector3(55, 42, 60), target: new THREE.Vector3(0, 0, 0) },
   top: { pos: new THREE.Vector3(0, 240, 0.1), target: new THREE.Vector3(0, 0, 0) },
-  walk: { pos: new THREE.Vector3(0, 1.8, -135), target: new THREE.Vector3(0, 1.8, 80) }
+  walk: { pos: new THREE.Vector3(0, 1.8, -135), target: new THREE.Vector3(0, 1.8, 80) },
+  river: { pos: new THREE.Vector3(-140, 50, -40), target: new THREE.Vector3(-60, 5, -20) }
 };
 
 // Lighting / Atmosphere Themes
@@ -118,6 +120,9 @@ function init() {
 
   // 6. Drip Irrigation System with Pump & Filter
   createIrrigationSystem();
+
+  // 6b. Ayrichay River & Intake Pipeline
+  createAyrichayRiver();
 
   // 7. Pollen & Wind Particle System
   createPollenParticles();
@@ -608,6 +613,119 @@ function createIrrigationSystem() {
   scene.add(irrigationGroup);
 }
 
+function createAyrichayRiver() {
+  riverGroup = new THREE.Group();
+
+  // 1. Winding River Surface (Ayrichay)
+  const riverCurve = new THREE.CatmullRomCurve3([
+    new THREE.Vector3(-195, -0.2, -200),
+    new THREE.Vector3(-180, -0.2, -120),
+    new THREE.Vector3(-168, -0.2, -20),
+    new THREE.Vector3(-182, -0.2, 70),
+    new THREE.Vector3(-198, -0.2, 190)
+  ]);
+
+  // River water ribbon
+  const riverTubeGeom = new THREE.TubeGeometry(riverCurve, 64, 12, 8, false);
+  const riverWaterMat = new THREE.MeshStandardMaterial({
+    color: 0x0284c7,
+    roughness: 0.1,
+    metalness: 0.75,
+    transparent: true,
+    opacity: 0.92
+  });
+  const riverMesh = new THREE.Mesh(riverTubeGeom, riverWaterMat);
+  riverMesh.scale.set(1, 0.08, 1);
+  riverMesh.position.y = -0.2;
+  riverGroup.add(riverMesh);
+
+  // Riverbed gravel bank
+  const riverBedMat = new THREE.MeshStandardMaterial({ color: 0x3d3930, roughness: 0.95 });
+  const riverBedMesh = new THREE.Mesh(new THREE.TubeGeometry(riverCurve, 64, 16, 6, false), riverBedMat);
+  riverBedMesh.scale.set(1, 0.05, 1);
+  riverBedMesh.position.y = -0.32;
+  riverGroup.add(riverBedMesh);
+
+  // Riparian Trees & Shrubs along Ayrichay banks
+  const bushGeom = new THREE.DodecahedronGeometry(2.4, 1);
+  const bushMat = new THREE.MeshStandardMaterial({ color: 0x1e5e3a, roughness: 0.8, flatShading: true });
+  const bushMat2 = new THREE.MeshStandardMaterial({ color: 0x2d7a4c, roughness: 0.75, flatShading: true });
+
+  const points = riverCurve.getPoints(24);
+  points.forEach((pt, idx) => {
+    // West bank bush
+    const b1 = new THREE.Mesh(bushGeom, idx % 2 === 0 ? bushMat : bushMat2);
+    b1.position.set(pt.x - 15 - Math.random() * 8, 1.2, pt.z + (Math.random() - 0.5) * 6);
+    b1.scale.setScalar(0.8 + Math.random() * 0.6);
+    riverGroup.add(b1);
+
+    // East bank bush (towards plot)
+    const b2 = new THREE.Mesh(bushGeom, idx % 2 === 1 ? bushMat : bushMat2);
+    b2.position.set(pt.x + 14 + Math.random() * 6, 1.2, pt.z + (Math.random() - 0.5) * 6);
+    b2.scale.setScalar(0.8 + Math.random() * 0.5);
+    riverGroup.add(b2);
+  });
+
+  // 2. Riverside Intake Pumping Station (Çay Nasos Qovşağı)
+  const intakePos = new THREE.Vector3(-166, 0.1, -18);
+  const intakeStation = new THREE.Group();
+  intakeStation.position.copy(intakePos);
+
+  const platGeom = new THREE.BoxGeometry(3.5, 0.25, 3);
+  const platMat = new THREE.MeshStandardMaterial({ color: 0x4b5563, roughness: 0.7 });
+  const platform = new THREE.Mesh(platGeom, platMat);
+  platform.position.y = 0.12;
+  intakeStation.add(platform);
+
+  const pumpGeom = new THREE.BoxGeometry(1.6, 1.2, 1.2);
+  const pumpMat = new THREE.MeshStandardMaterial({ color: 0xdc2626, roughness: 0.4 });
+  const pump = new THREE.Mesh(pumpGeom, pumpMat);
+  pump.position.set(0, 0.75, 0);
+  pump.castShadow = true;
+  intakeStation.add(pump);
+
+  // Suction pipe dipping into Ayrichay
+  const suctionGeom = new THREE.CylinderGeometry(0.12, 0.12, 14, 8);
+  const suctionPipe = new THREE.Mesh(suctionGeom, new THREE.MeshStandardMaterial({ color: 0x1e293b, roughness: 0.5 }));
+  suctionPipe.position.set(-6.5, -0.1, 0);
+  suctionPipe.rotation.z = Math.PI / 2.3;
+  intakeStation.add(suctionPipe);
+
+  riverGroup.add(intakeStation);
+
+  // 3. 180-meter Main Connecting Pipe from Ayrichay to Orchard Filter Station
+  const filterStationPos = new THREE.Vector3(-PLOT_WIDTH / 2 + 2, 0.1, -(PLOT_LENGTH / 2) + 7);
+  const pipeLength = intakePos.distanceTo(filterStationPos);
+
+  const mainSupplyPipeGeom = new THREE.CylinderGeometry(0.08, 0.08, pipeLength, 8);
+  const mainSupplyPipeMat = new THREE.MeshStandardMaterial({ color: 0x1e3a8a, roughness: 0.4 });
+  const mainSupplyPipe = new THREE.Mesh(mainSupplyPipeGeom, mainSupplyPipeMat);
+
+  const midPoint = new THREE.Vector3().addVectors(intakePos, filterStationPos).multiplyScalar(0.5);
+  mainSupplyPipe.position.copy(midPoint);
+  mainSupplyPipe.position.y = 0.08;
+  mainSupplyPipe.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), filterStationPos.clone().sub(intakePos).normalize());
+  riverGroup.add(mainSupplyPipe);
+
+  // 4. Water Flow Pulse Spheres along the supply pipe
+  const pulseGeom = new THREE.SphereGeometry(0.25, 8, 8);
+  const pulseMat = new THREE.MeshBasicMaterial({ color: 0x38bdf8 });
+  for (let i = 0; i < 8; i++) {
+    const pulse = new THREE.Mesh(pulseGeom, pulseMat);
+    pulse.userData = {
+      start: intakePos.clone(),
+      end: filterStationPos.clone(),
+      progress: i / 8
+    };
+    pulse.position.lerpVectors(intakePos, filterStationPos, pulse.userData.progress);
+    pulse.position.y = 0.25;
+    waterPulses.push(pulse);
+    riverGroup.add(pulse);
+  }
+
+  scene.add(riverGroup);
+}
+
 function createPollenParticles() {
   const particleCount = 450;
   const geom = new THREE.BufferGeometry();
@@ -865,6 +983,16 @@ function animate() {
       if (child.userData && child.userData.isDripper) {
         child.position.y = child.userData.baseY + Math.sin(time * 6 + child.userData.phase) * 0.025;
       }
+    });
+  }
+
+  // Animate Water pulses along the Ayrichay supply pipe
+  if (isIrrigationOn && waterPulses.length > 0) {
+    waterPulses.forEach(p => {
+      p.userData.progress += 0.003;
+      if (p.userData.progress > 1.0) p.userData.progress = 0.0;
+      p.position.lerpVectors(p.userData.start, p.userData.end, p.userData.progress);
+      p.position.y = 0.25;
     });
   }
 
